@@ -22,6 +22,12 @@ class VMControlFlowTests(unittest.TestCase):
     def test_nested(self):
         self.parity('اجعل س = 0\nكرر 2 مرات:\n    طالما س < 2:\n        اطبع س\n        س = س + 1')
 
+    def test_bad_repeat_counts(self):
+        for value in ('-1', 'صحيح', '1.5'):
+            source = 'كرر ' + value + ' مرات:' + chr(10) + '    اطبع 1'
+            with self.assertRaisesRegex(RuntimeErrorNext, 'nonnegative integer'):
+                execute(compile_source(source))
+
     def test_loop_limit(self):
         module = compile_source('طالما صحيح:\n    اطبع 1')
         with self.assertRaisesRegex(RuntimeErrorNext, 'step limit'):
