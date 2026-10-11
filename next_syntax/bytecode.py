@@ -9,6 +9,8 @@ from .parser import Assign, Binary, If, While, Repeat, ForEach, Index, ListLiter
 from .runtime import RuntimeErrorNext, OPERATORS
 
 VERSION = 1
+MAX_INSTRUCTIONS = 100_000
+MAX_JSON_BYTES = 4_000_000
 OPS = {'PUSH', 'LOAD', 'STORE', 'TO_BOOL', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT', 'BUILD_LIST', 'INDEX', 'ITER_INIT', 'ITER_NEXT', 'DEFINE', 'CALL', 'RETURN'}
 BINARY = set(OPERATORS)
 
@@ -23,7 +25,12 @@ class Bytecode:
 
     @classmethod
     def from_json(cls, source):
-        obj = json.loads(source)
+        if not isinstance(source, str) or len(source.encode('utf-8')) > MAX_JSON_BYTES:
+            raise ValueError('Bytecode document too large')
+        try:
+            obj = json.loads(source)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise ValueError('Invalid bytecode JSON') from exc
         if not isinstance(obj, dict) or set(obj) != {'version', 'code'}:
             raise ValueError('Invalid bytecode document')
         if not isinstance(obj['code'], list):
@@ -39,6 +46,8 @@ def validate(module):
         raise ValueError('Unsupported bytecode version')
     if not isinstance(module.code, tuple):
         raise ValueError('Invalid bytecode instructions')
+    if len(module.code) > MAX_INSTRUCTIONS:
+        raise ValueError('Too many bytecode instructions')
     # Validate instruction shapes before control-flow analysis.
     for pc, instruction in enumerate(module.code):
         if not isinstance(instruction, tuple) or len(instruction) != 2:
@@ -260,15 +269,18 @@ def compile_source(source):
     validate(module)
     return module
 
-def execute(module, *, max_steps=100000):
+def execute(module, *, max_steps=100000, max_call_depth=100, max_output_lines=10000):
     validate(module)
     if type(max_steps) is not int or max_steps < 1:
         raise ValueError('max_steps must be positive')
+    if type(max_call_depth) is not int or max_call_depth < 2:
+        raise ValueError('max_call_depth must be >= 2')
+    if type(max_output_lines) is not int or max_output_lines < 1:
+        raise ValueError('max_output_lines must be positive')
     stack, variables, output = [], {}, []
     functions = {}
     frames = [variables]
     calls = []
-    max_call_depth = 100
     pc = 0
     steps = 0
     while pc < len(module.code):
@@ -341,6 +353,8 @@ def execute(module, *, max_steps=100000):
             except StopIteration:
                 pc = end
         elif op == 'PRINT':
+            if len(output) >= max_output_lines:
+                raise RuntimeErrorNext('Output line limit exceeded')
             output.append(str(stack.pop()))
         elif op == 'JUMP':
             pc = arg
