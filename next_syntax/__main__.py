@@ -11,16 +11,19 @@ from .runtime import run, RuntimeErrorNext
 from .bytecode import Bytecode, compile_source, execute
 from .ast_json import dumps as ast_dumps
 from .editor import diagnostics
+from .formatter import format_source
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='python -m next_syntax')
-    parser.add_argument('command', choices=('run', 'check', 'tokens', 'lint', 'compile', 'vm', 'ast-json', 'diagnostics-json'))
+    parser.add_argument('command', choices=('run', 'check', 'tokens', 'lint', 'compile', 'vm', 'ast-json', 'diagnostics-json', 'format'))
     parser.add_argument('file', type=Path)
     parser.add_argument('--max-steps', type=int, default=100000)
     args = parser.parse_args(argv)
     try:
         source = args.file.read_text(encoding='utf-8-sig')
-        if args.command == 'ast-json':
+        if args.command == 'format':
+            print(format_source(source), end='')
+        elif args.command == 'ast-json':
             print(ast_dumps(parse(source)))
         elif args.command == 'diagnostics-json':
             issues = diagnostics(source)
