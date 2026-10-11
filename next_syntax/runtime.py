@@ -1,7 +1,7 @@
 """Experimental opt-in AST interpreter. Not a security sandbox."""
 import operator
 from dataclasses import dataclass, field
-from .parser import (Assign, Binary, Call, Function, If, ListLiteral, Literal,
+from .parser import (Assign, Binary, Call, ForEach, Function, If, Index, ListLiteral, Literal,
                      Name, Print, Program, Repeat, Return, Unary, While, parse)
 
 class RuntimeErrorNext(Exception):
@@ -53,6 +53,17 @@ class Interpreter:
             return [self.evaluate(element) for element in node.elements]
         if isinstance(node, Name):
             return self.lookup(node.value)
+        if isinstance(node, Index):
+            target = self.evaluate(node.target)
+            index = self.evaluate(node.index)
+            if not isinstance(target, (list, str)):
+                raise RuntimeErrorNext('Indexing requires a list or string')
+            if type(index) is not int:
+                raise RuntimeErrorNext('Index must be an integer')
+            try:
+                return target[index]
+            except IndexError as exc:
+                raise RuntimeErrorNext('Index out of range') from exc
         if isinstance(node, Unary):
             if node.op == 'NEG':
                 return -self.evaluate(node.operand)
@@ -103,6 +114,14 @@ class Interpreter:
                         break
                 else:
                     self.execute_block(statement.otherwise)
+            elif isinstance(statement, ForEach):
+                iterable = self.evaluate(statement.iterable)
+                if not isinstance(iterable, (list, str)):
+                    raise RuntimeErrorNext('For-each requires a list or string')
+                for item in iterable:
+                    self.tick()
+                    self.frames[-1][statement.name] = item
+                    self.execute_block(statement.body)
             elif isinstance(statement, While):
                 while self.evaluate(statement.condition):
                     self.tick()
