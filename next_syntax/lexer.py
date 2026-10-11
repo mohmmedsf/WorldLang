@@ -21,6 +21,9 @@ PHRASES = {
     'وإلا إذا': 'ELIF', 'والا اذا': 'ELIF',
     'وإلا': 'ELSE', 'والا': 'ELSE',
     'اجعل': 'LET', 'إذا': 'IF', 'اذا': 'IF', 'اطبع': 'PRINT',
+    'دالة': 'FUNC', 'عرّف': 'FUNC', 'ارجع': 'RETURN', 'أرجع': 'RETURN',
+    'طالما': 'WHILE', 'بينما': 'WHILE', 'كرر': 'REPEAT', 'مرات': 'TIMES',
+    'قائمة': 'LIST', 'صحيح': 'TRUE', 'خطأ': 'FALSE',
     'يساوي': 'ASSIGN', 'أو': 'OR', 'او': 'OR', 'و': 'AND',
 }
 PHRASE_ORDER = sorted(PHRASES, key=len, reverse=True)
@@ -28,7 +31,7 @@ IDENT = re.compile(r'[^\W\d]\w*', re.UNICODE)
 NUMBER = re.compile(r'\d+(?:\.\d+)?')
 SYMBOLS = {'=':'ASSIGN', '>':'GT', '<':'LT', '+':'PLUS', '-':'MINUS',
            '*':'MUL', '/':'DIV', '(':'LPAREN', ')':'RPAREN', ':':'COLON',
-           ',':'COMMA', '،':'COMMA'}
+           ',':'COMMA', '،':'COMMA', '[':'LBRACKET', ']':'RBRACKET'}
 
 def lex(source: str) -> list[Token]:
     tokens: list[Token] = []

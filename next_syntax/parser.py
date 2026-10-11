@@ -40,6 +40,35 @@ class If:
     otherwise: tuple
 
 @dataclass(frozen=True)
+class ListLiteral:
+    elements: tuple
+
+@dataclass(frozen=True)
+class Call:
+    name: str
+    arguments: tuple
+
+@dataclass(frozen=True)
+class Function:
+    name: str
+    parameters: tuple
+    body: tuple
+
+@dataclass(frozen=True)
+class Return:
+    value: object
+
+@dataclass(frozen=True)
+class While:
+    condition: object
+    body: tuple
+
+@dataclass(frozen=True)
+class Repeat:
+    count: object
+    body: tuple
+
+@dataclass(frozen=True)
 class Program:
     statements: tuple
 
@@ -115,15 +144,48 @@ class Parser:
             value = self.expression()
             self.expect('NEWLINE')
             return Assign(name, value)
+        if self.accept('FUNC'):
+            name = self.expect('IDENT').value
+            self.expect('LPAREN')
+            parameters = []
+            if self.current.kind != 'RPAREN':
+                parameters.append(self.expect('IDENT').value)
+                while self.accept('COMMA'):
+                    parameters.append(self.expect('IDENT').value)
+            self.expect('RPAREN')
+            if len(set(parameters)) != len(parameters):
+                raise SyntaxErrorNext('Duplicate function parameter')
+            self.accept('COLON')
+            return Function(name, tuple(parameters), self.block())
+        if self.accept('RETURN'):
+            value = self.expression()
+            self.expect('NEWLINE')
+            return Return(value)
+        if self.accept('WHILE'):
+            condition = self.expression()
+            self.accept('COLON')
+            return While(condition, self.block())
+        if self.accept('REPEAT'):
+            count = self.expression()
+            self.expect('TIMES')
+            self.accept('COLON')
+            return Repeat(count, self.block())
         if self.accept('PRINT'):
             value = self.expression()
             self.expect('NEWLINE')
             return Print(value)
         if self.accept('IF'):
-            branches = [(self.expression(), self.block())]
+            condition = self.expression()
+            self.accept('COLON')
+            branches = [(condition, self.block())]
             while self.accept('ELIF'):
-                branches.append((self.expression(), self.block()))
-            otherwise = self.block() if self.accept('ELSE') else ()
+                condition = self.expression()
+                self.accept('COLON')
+                branches.append((condition, self.block()))
+            otherwise = ()
+            if self.accept('ELSE'):
+                self.accept('COLON')
+                otherwise = self.block()
             return If(tuple(branches), otherwise)
         t = self.current
         raise SyntaxErrorNext(f'Line {t.line}, column {t.column}: unsupported statement {t.kind}')
@@ -139,8 +201,29 @@ class Parser:
             left = Literal(float(token.value) if '.' in token.value else int(token.value))
         elif self.accept('STRING'):
             left = Literal(token.value[1:-1])
+        elif self.accept('TRUE'):
+            left = Literal(True)
+        elif self.accept('FALSE'):
+            left = Literal(False)
+        elif self.accept('LBRACKET'):
+            items = []
+            if self.current.kind != 'RBRACKET':
+                items.append(self.expression())
+                while self.accept('COMMA'):
+                    items.append(self.expression())
+            self.expect('RBRACKET')
+            left = ListLiteral(tuple(items))
         elif self.accept('IDENT'):
-            left = Name(token.value)
+            if self.accept('LPAREN'):
+                args = []
+                if self.current.kind != 'RPAREN':
+                    args.append(self.expression())
+                    while self.accept('COMMA'):
+                        args.append(self.expression())
+                self.expect('RPAREN')
+                left = Call(token.value, tuple(args))
+            else:
+                left = Name(token.value)
         else:
             raise SyntaxErrorNext(f'Line {token.line}, column {token.column}: expected expression, got {token.kind}')
 
