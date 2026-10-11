@@ -24,9 +24,9 @@ class BytecodeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(Bytecode(1, (('PUSH', 1),)))
 
-    def test_reject_unsupported_control_flow(self):
+    def test_reject_unsupported_function(self):
         with self.assertRaises(ValueError):
-            compile_source('طالما صحيح:\n    اطبع 1')
+            compile_source('دالة فحص():\n    أرجع 1')
 
     def test_reject_unsupported_boolean_short_circuit(self):
         with self.assertRaises(ValueError):

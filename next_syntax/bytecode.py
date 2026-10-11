@@ -5,11 +5,11 @@ Unsupported syntax fails closed rather than silently falling back to AST executi
 """
 import json
 from dataclasses import dataclass
-from .parser import Assign, Binary, Literal, Name, Print, Unary, parse
+from .parser import Assign, Binary, If, While, Repeat, Literal, Name, Print, Unary, parse
 from .runtime import RuntimeErrorNext, OPERATORS
 
 VERSION = 1
-OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT'}
+OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT'}
 BINARY = set(OPERATORS) | {'AND', 'OR'}
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ def validate(module):
     if not isinstance(module.code, tuple):
         raise ValueError('Invalid bytecode instructions')
     depth = 0
-    for instruction in module.code:
+    for pc, instruction in enumerate(module.code):
         if not isinstance(instruction, tuple) or len(instruction) != 2:
             raise ValueError('Invalid instruction format')
         op, arg = instruction
@@ -55,6 +55,24 @@ def validate(module):
         elif op == 'BINARY':
             if arg not in BINARY or depth < 2:
                 raise ValueError('Invalid binary operation or stack underflow')
+            depth -= 1
+        elif op in ('JUMP', 'JUMP_IF_FALSE'):
+            if type(arg) is not int or not 0 <= arg <= len(module.code):
+                raise ValueError('Invalid jump target')
+            if op == 'JUMP_IF_FALSE':
+                if depth < 1:
+                    raise ValueError('Stack underflow')
+                depth -= 1
+        elif op == 'CHECK_REPEAT':
+            if arg is not None or depth < 1:
+                raise ValueError('Invalid repeat count check')
+        elif op == 'DUP':
+            if arg is not None or depth < 1:
+                raise ValueError('Invalid DUP')
+            depth += 1
+        elif op == 'POP':
+            if arg is not None or depth < 1:
+                raise ValueError('Invalid POP')
             depth -= 1
         elif op == 'NEG':
             if arg is not None or depth < 1:
@@ -89,15 +107,61 @@ def compile_source(source):
             code.append(('BINARY', node.op))
         else:
             raise ValueError(f'Unsupported bytecode expression: {type(node).__name__}')
-    for stmt in parse(source).statements:
+    counter = 0
+    def emit_block(statements):
+        for statement in statements:
+            emit_statement(statement)
+    def emit_statement(stmt):
+        nonlocal counter
         if isinstance(stmt, Assign):
             emit_expr(stmt.value)
             code.append(('STORE', stmt.name))
         elif isinstance(stmt, Print):
             emit_expr(stmt.value)
             code.append(('PRINT', None))
+        elif isinstance(stmt, If):
+            exits = []
+            for condition, body in stmt.branches:
+                emit_expr(condition)
+                jump = len(code)
+                code.append(('JUMP_IF_FALSE', -1))
+                emit_block(body)
+                exits.append(len(code))
+                code.append(('JUMP', -1))
+                code[jump] = ('JUMP_IF_FALSE', len(code))
+            emit_block(stmt.otherwise)
+            for jump in exits:
+                code[jump] = ('JUMP', len(code))
+        elif isinstance(stmt, While):
+            start = len(code)
+            emit_expr(stmt.condition)
+            jump = len(code)
+            code.append(('JUMP_IF_FALSE', -1))
+            emit_block(stmt.body)
+            code.append(('JUMP', start))
+            code[jump] = ('JUMP_IF_FALSE', len(code))
+        elif isinstance(stmt, Repeat):
+            counter += 1
+            name = f'\\x00repeat_{counter}'
+            emit_expr(stmt.count)
+            code.append(('CHECK_REPEAT', None))
+            code.append(('STORE', name))
+            start = len(code)
+            code.append(('LOAD', name))
+            code.append(('PUSH', 0))
+            code.append(('BINARY', 'GT'))
+            jump = len(code)
+            code.append(('JUMP_IF_FALSE', -1))
+            emit_block(stmt.body)
+            code.append(('LOAD', name))
+            code.append(('PUSH', 1))
+            code.append(('BINARY', 'MINUS'))
+            code.append(('STORE', name))
+            code.append(('JUMP', start))
+            code[jump] = ('JUMP_IF_FALSE', len(code))
         else:
             raise ValueError(f'Unsupported bytecode statement: {type(stmt).__name__}')
+    emit_block(parse(source).statements)
     module = Bytecode(VERSION, tuple(code))
     validate(module)
     return module
@@ -107,8 +171,13 @@ def execute(module, *, max_steps=100000):
     if type(max_steps) is not int or max_steps < 1:
         raise ValueError('max_steps must be positive')
     stack, variables, output = [], {}, []
-    for step, (op, arg) in enumerate(module.code, 1):
-        if step > max_steps:
+    pc = 0
+    steps = 0
+    while pc < len(module.code):
+        op, arg = module.code[pc]
+        pc += 1
+        steps += 1
+        if steps > max_steps:
             raise RuntimeErrorNext('Execution step limit exceeded')
         if op == 'PUSH':
             stack.append(arg)
@@ -120,6 +189,19 @@ def execute(module, *, max_steps=100000):
             variables[arg] = stack.pop()
         elif op == 'PRINT':
             output.append(str(stack.pop()))
+        elif op == 'JUMP':
+            pc = arg
+        elif op == 'JUMP_IF_FALSE':
+            if not stack.pop():
+                pc = arg
+        elif op == 'CHECK_REPEAT':
+            count = stack[-1]
+            if type(count) is not int or count < 0:
+                raise RuntimeErrorNext('Repeat count must be a nonnegative integer')
+        elif op == 'DUP':
+            stack.append(stack[-1])
+        elif op == 'POP':
+            stack.pop()
         elif op == 'NEG':
             try:
                 stack.append(-stack.pop())
