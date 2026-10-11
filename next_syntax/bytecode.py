@@ -47,7 +47,7 @@ def validate(module):
         if not isinstance(op, str) or op not in OPS:
             raise ValueError('Invalid opcode')
         if op == 'PUSH':
-            if type(arg) not in (int, float, str, bool):
+            if arg is not None and type(arg) not in (int, float, str, bool):
                 raise ValueError('Invalid constant')
         elif op in ('LOAD', 'STORE'):
             if not isinstance(arg, str) or not arg:
@@ -196,7 +196,7 @@ def compile_source(source):
             code.append(('JUMP', -1))
             start = len(code)
             emit_block(stmt.body)
-            code.append(('PUSH', 0))
+            code.append(('PUSH', None))
             code.append(('RETURN', None))
             code[skip] = ('JUMP', len(code))
             code.append(('DEFINE', (stmt.name, stmt.parameters, start)))
