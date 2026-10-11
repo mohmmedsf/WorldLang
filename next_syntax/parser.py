@@ -44,6 +44,17 @@ class ListLiteral:
     elements: tuple
 
 @dataclass(frozen=True)
+class Index:
+    target: object
+    index: object
+
+@dataclass(frozen=True)
+class ForEach:
+    name: str
+    iterable: object
+    body: tuple
+
+@dataclass(frozen=True)
 class Call:
     name: str
     arguments: tuple
@@ -161,6 +172,12 @@ class Parser:
             value = self.expression()
             self.expect('NEWLINE')
             return Return(value)
+        if self.accept('FOR'):
+            name = self.expect('IDENT').value
+            self.expect('IN')
+            iterable = self.expression()
+            self.accept('COLON')
+            return ForEach(name, iterable, self.block())
         if self.accept('WHILE'):
             condition = self.expression()
             self.accept('COLON')
@@ -226,6 +243,12 @@ class Parser:
                 left = Name(token.value)
         else:
             raise SyntaxErrorNext(f'Line {token.line}, column {token.column}: expected expression, got {token.kind}')
+
+        while self.current.kind == 'LBRACKET':
+            self.expect('LBRACKET')
+            index = self.expression()
+            self.expect('RBRACKET')
+            left = Index(left, index)
 
         while self.current.kind in PRECEDENCE and PRECEDENCE[self.current.kind] >= min_precedence:
             operator = self.current.kind
