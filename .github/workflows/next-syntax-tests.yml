@@ -5,6 +5,7 @@ on:
       - feature/hybrid-runtime-e2e
       - feature/next-functions-loops-lists
       - feature/next-foreach-indexing
+      - integration/next-toolchain-v1
       - feature/next-source-diagnostics
       - feature/next-static-analysis
   pull_request:
