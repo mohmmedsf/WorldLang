@@ -1,0 +1,49 @@
+{
+  "schema": "worldlang.next.conformance",
+  "version": 1,
+  "cases": [
+    {
+      "name": "arithmetic",
+      "source": "اطبع 2 + 3 * 4",
+      "expected_output": [
+        "14"
+      ]
+    },
+    {
+      "name": "variables",
+      "source": "اجعل قيمة = 7\nاطبع قيمة",
+      "expected_output": [
+        "7"
+      ]
+    },
+    {
+      "name": "if-else",
+      "source": "اذا 3 > 2:\n    اطبع 1\nوالا:\n    اطبع 0",
+      "expected_output": [
+        "1"
+      ]
+    },
+    {
+      "name": "foreach",
+      "source": "لكل س في [1، 2]:\n    اطبع س",
+      "expected_output": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "name": "function",
+      "source": "دالة ضعف(س):\n    أرجع س * 2\nاطبع ضعف(4)",
+      "expected_output": [
+        "8"
+      ]
+    },
+    {
+      "name": "short-circuit",
+      "source": "اطبع خطأ و غير_معروف",
+      "expected_output": [
+        "False"
+      ]
+    }
+  ]
+}
