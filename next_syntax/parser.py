@@ -138,7 +138,7 @@ class Parser:
         elif self.accept('NUMBER'):
             left = Literal(float(token.value) if '.' in token.value else int(token.value))
         elif self.accept('STRING'):
-            left = Literal(bytes(token.value[1:-1], 'utf-8').decode('unicode_escape') if False else token.value[1:-1])
+            left = Literal(token.value[1:-1])
         elif self.accept('IDENT'):
             left = Name(token.value)
         else:
