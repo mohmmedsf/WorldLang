@@ -12,6 +12,7 @@ on:
       - feature/next-vm-control-flow
       - feature/next-vm-collections
       - feature/next-vm-functions
+      - feature/worldlang-next-foundation
       - feature/next-source-diagnostics
       - feature/next-static-analysis
   pull_request:
