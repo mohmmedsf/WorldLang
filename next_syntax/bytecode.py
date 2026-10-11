@@ -9,7 +9,7 @@ from .parser import Assign, Binary, If, While, Repeat, ForEach, Index, ListLiter
 from .runtime import RuntimeErrorNext, OPERATORS
 
 VERSION = 1
-OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT', 'BUILD_LIST', 'INDEX', 'ITER_INIT', 'ITER_NEXT', 'DEFINE', 'CALL', 'RETURN'}
+OPS = {'PUSH', 'LOAD', 'STORE', 'TO_BOOL', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT', 'BUILD_LIST', 'INDEX', 'ITER_INIT', 'ITER_NEXT', 'DEFINE', 'CALL', 'RETURN'}
 BINARY = set(OPERATORS)
 
 @dataclass(frozen=True)
@@ -97,7 +97,7 @@ def validate(module):
         op, arg = module.code[pc]
         pops, pushes = {
             'PUSH': (0, 1), 'LOAD': (0, 1), 'STORE': (1, 0),
-            'BINARY': (2, 1), 'NEG': (1, 1), 'PRINT': (1, 0),
+            'BINARY': (2, 1), 'NEG': (1, 1), 'TO_BOOL': (1, 1), 'PRINT': (1, 0),
             'JUMP': (0, 0), 'JUMP_IF_FALSE': (1, 0),
             'DUP': (1, 2), 'POP': (1, 0), 'CHECK_REPEAT': (1, 1),
             'BUILD_LIST': (arg if op == 'BUILD_LIST' else 0, 1),
@@ -149,8 +149,31 @@ def compile_source(source):
             emit_expr(node.operand)
             code.append(('NEG', None))
         elif isinstance(node, Binary):
-            if node.op in ('AND', 'OR'):
-                raise ValueError('Short-circuit boolean expressions are not yet supported in bytecode')
+            if node.op == 'AND':
+                emit_expr(node.left)
+                code.append(('TO_BOOL', None))
+                code.append(('DUP', None))
+                jump = len(code)
+                code.append(('JUMP_IF_FALSE', -1))
+                code.append(('POP', None))
+                emit_expr(node.right)
+                code.append(('TO_BOOL', None))
+                code[jump] = ('JUMP_IF_FALSE', len(code))
+                return
+            if node.op == 'OR':
+                emit_expr(node.left)
+                code.append(('TO_BOOL', None))
+                code.append(('DUP', None))
+                jump = len(code)
+                code.append(('JUMP_IF_FALSE', -1))
+                end = len(code)
+                code.append(('JUMP', -1))
+                code[jump] = ('JUMP_IF_FALSE', len(code))
+                code.append(('POP', None))
+                emit_expr(node.right)
+                code.append(('TO_BOOL', None))
+                code[end] = ('JUMP', len(code))
+                return
             emit_expr(node.left)
             emit_expr(node.right)
             code.append(('BINARY', node.op))
@@ -332,6 +355,8 @@ def execute(module, *, max_steps=100000):
             stack.append(stack[-1])
         elif op == 'POP':
             stack.pop()
+        elif op == 'TO_BOOL':
+            stack.append(bool(stack.pop()))
         elif op == 'NEG':
             try:
                 stack.append(-stack.pop())
