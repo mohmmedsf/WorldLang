@@ -1,0 +1,44 @@
+import unittest
+from next_syntax.bytecode import Bytecode, compile_source, execute, validate
+from next_syntax.runtime import run, RuntimeErrorNext
+
+class BytecodeTests(unittest.TestCase):
+    def test_arithmetic_matches_interpreter(self):
+        source = 'اجعل س = 2 + 3 * 4\nاطبع س'
+        self.assertEqual(execute(compile_source(source))['output'], run(source).output)
+
+    def test_roundtrip_json_arabic(self):
+        module = compile_source('اجعل قيمة = 7\nاطبع قيمة')
+        decoded = Bytecode.from_json(module.to_json())
+        self.assertEqual(execute(decoded)['output'], ['7'])
+
+    def test_reject_unknown_opcode(self):
+        with self.assertRaises(ValueError):
+            validate(Bytecode(1, (('EVAL', None),)))
+
+    def test_reject_stack_underflow(self):
+        with self.assertRaises(ValueError):
+            validate(Bytecode(1, (('PRINT', None),)))
+
+    def test_reject_unbalanced_stack(self):
+        with self.assertRaises(ValueError):
+            validate(Bytecode(1, (('PUSH', 1),)))
+
+    def test_compile_function(self):
+        module = compile_source('دالة فحص():\n    أرجع 1\nاطبع فحص()')
+        self.assertEqual(execute(module)['output'], ['1'])
+
+    def test_boolean_short_circuit_matches_interpreter(self):
+        source = 'اطبع صحيح و خطأ'
+        self.assertEqual(execute(compile_source(source))['output'], run(source).output)
+
+    def test_step_limit(self):
+        with self.assertRaises(RuntimeErrorNext):
+            execute(compile_source('اطبع 1\nاطبع 2'), max_steps=1)
+
+    def test_undefined_variable(self):
+        with self.assertRaises(RuntimeErrorNext):
+            execute(compile_source('اطبع مجهول'))
+
+if __name__ == '__main__':
+    unittest.main()

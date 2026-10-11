@@ -1,0 +1,265 @@
+"""Small deterministic AST parser for the opt-in Arabic hybrid syntax.
+
+Supports declarations, assignments, printing, arithmetic, comparisons, if/elif/else.
+Does not execute code or change the Classic WorldLang parser.
+"""
+from dataclasses import dataclass
+from .lexer import lex, SyntaxErrorNext
+
+@dataclass(frozen=True)
+class Literal:
+    value: object
+
+@dataclass(frozen=True)
+class Name:
+    value: str
+
+@dataclass(frozen=True)
+class Unary:
+    op: str
+    operand: object
+
+@dataclass(frozen=True)
+class Binary:
+    op: str
+    left: object
+    right: object
+
+@dataclass(frozen=True)
+class Assign:
+    name: str
+    value: object
+
+@dataclass(frozen=True)
+class Print:
+    value: object
+
+@dataclass(frozen=True)
+class If:
+    branches: tuple
+    otherwise: tuple
+
+@dataclass(frozen=True)
+class ListLiteral:
+    elements: tuple
+
+@dataclass(frozen=True)
+class Index:
+    target: object
+    index: object
+
+@dataclass(frozen=True)
+class ForEach:
+    name: str
+    iterable: object
+    body: tuple
+
+@dataclass(frozen=True)
+class Call:
+    name: str
+    arguments: tuple
+
+@dataclass(frozen=True)
+class Function:
+    name: str
+    parameters: tuple
+    body: tuple
+
+@dataclass(frozen=True)
+class Return:
+    value: object
+
+@dataclass(frozen=True)
+class While:
+    condition: object
+    body: tuple
+
+@dataclass(frozen=True)
+class Repeat:
+    count: object
+    body: tuple
+
+@dataclass(frozen=True)
+class Program:
+    statements: tuple
+
+PRECEDENCE = {
+    'OR': 1, 'AND': 2, 'EQ': 3, 'NE': 3,
+    'GT': 3, 'LT': 3, 'GE': 3, 'LE': 3,
+    'PLUS': 4, 'MINUS': 4, 'MUL': 5, 'DIV': 5,
+}
+COMPARISONS = {'EQ', 'NE', 'GT', 'LT', 'GE', 'LE'}
+
+class Parser:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.i = 0
+
+    @property
+    def current(self):
+        return self.tokens[self.i]
+
+    def accept(self, kind):
+        if self.current.kind == kind:
+            token = self.current
+            self.i += 1
+            return token
+        return None
+
+    def expect(self, kind):
+        token = self.accept(kind)
+        if token is None:
+            t = self.current
+            raise SyntaxErrorNext(
+                f'Line {t.line}, column {t.column}: expected {kind}, got {t.kind}'
+            )
+        return token
+
+    def parse(self):
+        statements = self.statements('EOF')
+        self.expect('EOF')
+        return Program(tuple(statements))
+
+    def statements(self, end):
+        result = []
+        while self.current.kind != end:
+            if self.current.kind == 'EOF':
+                self.expect(end)
+            if self.accept('NEWLINE'):
+                continue
+            if self.current.kind in ('DEDENT', 'ELSE', 'ELIF'):
+                self.expect(end)
+            result.append(self.statement())
+        return result
+
+    def block(self):
+        self.expect('NEWLINE')
+        self.expect('INDENT')
+        statements = self.statements('DEDENT')
+        if not statements:
+            t = self.current
+            raise SyntaxErrorNext(f'Line {t.line}: empty block')
+        self.expect('DEDENT')
+        return tuple(statements)
+
+    def statement(self):
+        if self.accept('LET'):
+            name = self.expect('IDENT').value
+            self.expect('ASSIGN')
+            value = self.expression()
+            self.expect('NEWLINE')
+            return Assign(name, value)
+        if self.current.kind == 'IDENT' and self.tokens[self.i + 1].kind == 'ASSIGN':
+            name = self.expect('IDENT').value
+            self.expect('ASSIGN')
+            value = self.expression()
+            self.expect('NEWLINE')
+            return Assign(name, value)
+        if self.accept('FUNC'):
+            name = self.expect('IDENT').value
+            self.expect('LPAREN')
+            parameters = []
+            if self.current.kind != 'RPAREN':
+                parameters.append(self.expect('IDENT').value)
+                while self.accept('COMMA'):
+                    parameters.append(self.expect('IDENT').value)
+            self.expect('RPAREN')
+            if len(set(parameters)) != len(parameters):
+                raise SyntaxErrorNext('Duplicate function parameter')
+            self.accept('COLON')
+            return Function(name, tuple(parameters), self.block())
+        if self.accept('RETURN'):
+            value = self.expression()
+            self.expect('NEWLINE')
+            return Return(value)
+        if self.accept('FOR'):
+            name = self.expect('IDENT').value
+            self.expect('IN')
+            iterable = self.expression()
+            self.accept('COLON')
+            return ForEach(name, iterable, self.block())
+        if self.accept('WHILE'):
+            condition = self.expression()
+            self.accept('COLON')
+            return While(condition, self.block())
+        if self.accept('REPEAT'):
+            count = self.expression()
+            self.expect('TIMES')
+            self.accept('COLON')
+            return Repeat(count, self.block())
+        if self.accept('PRINT'):
+            value = self.expression()
+            self.expect('NEWLINE')
+            return Print(value)
+        if self.accept('IF'):
+            condition = self.expression()
+            self.accept('COLON')
+            branches = [(condition, self.block())]
+            while self.accept('ELIF'):
+                condition = self.expression()
+                self.accept('COLON')
+                branches.append((condition, self.block()))
+            otherwise = ()
+            if self.accept('ELSE'):
+                self.accept('COLON')
+                otherwise = self.block()
+            return If(tuple(branches), otherwise)
+        t = self.current
+        raise SyntaxErrorNext(f'Line {t.line}, column {t.column}: unsupported statement {t.kind}')
+
+    def expression(self, min_precedence=0):
+        token = self.current
+        if self.accept('MINUS'):
+            left = Unary('NEG', self.expression(6))
+        elif self.accept('LPAREN'):
+            left = self.expression()
+            self.expect('RPAREN')
+        elif self.accept('NUMBER'):
+            left = Literal(float(token.value) if '.' in token.value else int(token.value))
+        elif self.accept('STRING'):
+            left = Literal(token.value[1:-1])
+        elif self.accept('TRUE'):
+            left = Literal(True)
+        elif self.accept('FALSE'):
+            left = Literal(False)
+        elif self.accept('LBRACKET'):
+            items = []
+            if self.current.kind != 'RBRACKET':
+                items.append(self.expression())
+                while self.accept('COMMA'):
+                    items.append(self.expression())
+            self.expect('RBRACKET')
+            left = ListLiteral(tuple(items))
+        elif self.accept('IDENT'):
+            if self.accept('LPAREN'):
+                args = []
+                if self.current.kind != 'RPAREN':
+                    args.append(self.expression())
+                    while self.accept('COMMA'):
+                        args.append(self.expression())
+                self.expect('RPAREN')
+                left = Call(token.value, tuple(args))
+            else:
+                left = Name(token.value)
+        else:
+            raise SyntaxErrorNext(f'Line {token.line}, column {token.column}: expected expression, got {token.kind}')
+
+        while True:
+            if self.current.kind == 'LBRACKET':
+                self.expect('LBRACKET')
+                index = self.expression()
+                self.expect('RBRACKET')
+                left = Index(left, index)
+                continue
+            if self.current.kind not in PRECEDENCE or PRECEDENCE[self.current.kind] < min_precedence:
+                break
+            operator = self.current.kind
+            if operator in COMPARISONS and isinstance(left, Binary) and left.op in COMPARISONS:
+                raise SyntaxErrorNext(f'Line {self.current.line}: chained comparisons require explicit AND')
+            self.i += 1
+            right = self.expression(PRECEDENCE[operator] + 1)
+            left = Binary(operator, left, right)
+        return left
+
+def parse(source: str) -> Program:
+    return Parser(lex(source)).parse()
