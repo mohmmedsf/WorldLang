@@ -5,11 +5,11 @@ Unsupported syntax fails closed rather than silently falling back to AST executi
 """
 import json
 from dataclasses import dataclass
-from .parser import Assign, Binary, If, While, Repeat, Literal, Name, Print, Unary, parse
+from .parser import Assign, Binary, If, While, Repeat, ForEach, Index, ListLiteral, Literal, Name, Print, Unary, parse
 from .runtime import RuntimeErrorNext, OPERATORS
 
 VERSION = 1
-OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT'}
+OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT', 'BUILD_LIST', 'INDEX', 'ITER_INIT', 'ITER_NEXT'}
 BINARY = set(OPERATORS) | {'AND', 'OR'}
 
 @dataclass(frozen=True)
@@ -56,6 +56,24 @@ def validate(module):
             if arg not in BINARY or depth < 2:
                 raise ValueError('Invalid binary operation or stack underflow')
             depth -= 1
+        elif op == 'BUILD_LIST':
+            if type(arg) is not int or arg < 0 or depth < arg:
+                raise ValueError('Invalid list construction')
+            depth = depth - arg + 1
+        elif op == 'INDEX':
+            if arg is not None or depth < 2:
+                raise ValueError('Invalid indexing')
+            depth -= 1
+        elif op == 'ITER_INIT':
+            if arg is not None or depth < 1:
+                raise ValueError('Invalid iterator initialization')
+        elif op == 'ITER_NEXT':
+            if depth < 1:
+                raise ValueError('Iterator stack underflow')
+            if not isinstance(arg, list) and not isinstance(arg, tuple):
+                raise ValueError('Invalid iterator target')
+            if len(arg) != 2 or not isinstance(arg[0], str) or type(arg[1]) is not int or not 0 <= arg[1] <= len(module.code):
+                raise ValueError('Invalid iterator operands')
         elif op in ('JUMP', 'JUMP_IF_FALSE'):
             if type(arg) is not int or not 0 <= arg <= len(module.code):
                 raise ValueError('Invalid jump target')
@@ -96,6 +114,14 @@ def compile_source(source):
             code.append(('PUSH', node.value))
         elif isinstance(node, Name):
             code.append(('LOAD', node.value))
+        elif isinstance(node, ListLiteral):
+            for item in node.elements:
+                emit_expr(item)
+            code.append(('BUILD_LIST', len(node.elements)))
+        elif isinstance(node, Index):
+            emit_expr(node.target)
+            emit_expr(node.index)
+            code.append(('INDEX', None))
         elif isinstance(node, Unary) and node.op == 'NEG':
             emit_expr(node.operand)
             code.append(('NEG', None))
@@ -140,6 +166,16 @@ def compile_source(source):
             emit_block(stmt.body)
             code.append(('JUMP', start))
             code[jump] = ('JUMP_IF_FALSE', len(code))
+        elif isinstance(stmt, ForEach):
+            emit_expr(stmt.iterable)
+            code.append(('ITER_INIT', None))
+            start = len(code)
+            jump = len(code)
+            code.append(('ITER_NEXT', (stmt.name, -1)))
+            emit_block(stmt.body)
+            code.append(('JUMP', start))
+            code[jump] = ('ITER_NEXT', (stmt.name, len(code)))
+            code.append(('POP', None))
         elif isinstance(stmt, Repeat):
             counter += 1
             name = f'\\x00repeat_{counter}'
@@ -187,6 +223,32 @@ def execute(module, *, max_steps=100000):
             stack.append(variables[arg])
         elif op == 'STORE':
             variables[arg] = stack.pop()
+        elif op == 'BUILD_LIST':
+            items = stack[-arg:] if arg else []
+            if arg:
+                del stack[-arg:]
+            stack.append(items)
+        elif op == 'INDEX':
+            index, target = stack.pop(), stack.pop()
+            if not isinstance(target, (list, str)):
+                raise RuntimeErrorNext('Indexing requires a list or string')
+            if type(index) is not int:
+                raise RuntimeErrorNext('Index must be an integer')
+            try:
+                stack.append(target[index])
+            except IndexError as exc:
+                raise RuntimeErrorNext('Index out of range') from exc
+        elif op == 'ITER_INIT':
+            target = stack.pop()
+            if not isinstance(target, (list, str)):
+                raise RuntimeErrorNext('For-each requires a list or string')
+            stack.append(iter(target))
+        elif op == 'ITER_NEXT':
+            name, end = arg
+            try:
+                variables[name] = next(stack[-1])
+            except StopIteration:
+                pc = end
         elif op == 'PRINT':
             output.append(str(stack.pop()))
         elif op == 'JUMP':

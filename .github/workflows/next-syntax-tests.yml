@@ -10,6 +10,7 @@ on:
       - feature/next-typed-ir
       - feature/next-portable-ir-vm
       - feature/next-vm-control-flow
+      - feature/next-vm-collections
       - feature/next-source-diagnostics
       - feature/next-static-analysis
   pull_request:
