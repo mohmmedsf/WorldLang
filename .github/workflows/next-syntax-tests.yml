@@ -11,6 +11,7 @@ on:
       - feature/next-portable-ir-vm
       - feature/next-vm-control-flow
       - feature/next-vm-collections
+      - feature/next-vm-functions
       - feature/next-source-diagnostics
       - feature/next-static-analysis
   pull_request:
