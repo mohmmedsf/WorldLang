@@ -68,6 +68,8 @@ def validate(module):
             if arg is not None or depth < 1:
                 raise ValueError('Invalid iterator initialization')
         elif op == 'ITER_NEXT':
+            if depth < 1:
+                raise ValueError('Iterator stack underflow')
             if not isinstance(arg, list) and not isinstance(arg, tuple):
                 raise ValueError('Invalid iterator target')
             if len(arg) != 2 or not isinstance(arg[0], str) or type(arg[1]) is not int or not 0 <= arg[1] <= len(module.code):
