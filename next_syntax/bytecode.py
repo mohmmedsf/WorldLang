@@ -5,11 +5,11 @@ Unsupported syntax fails closed rather than silently falling back to AST executi
 """
 import json
 from dataclasses import dataclass
-from .parser import Assign, Binary, If, While, Repeat, ForEach, Index, ListLiteral, Literal, Name, Print, Unary, parse
+from .parser import Assign, Binary, If, While, Repeat, ForEach, Index, ListLiteral, Function, Call, Return, Literal, Name, Print, Unary, parse
 from .runtime import RuntimeErrorNext, OPERATORS
 
 VERSION = 1
-OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT', 'BUILD_LIST', 'INDEX', 'ITER_INIT', 'ITER_NEXT'}
+OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT', 'BUILD_LIST', 'INDEX', 'ITER_INIT', 'ITER_NEXT', 'DEFINE', 'CALL', 'RETURN'}
 BINARY = set(OPERATORS) | {'AND', 'OR'}
 
 @dataclass(frozen=True)
@@ -55,6 +55,23 @@ def validate(module):
         elif op == 'BINARY':
             if arg not in BINARY or depth < 2:
                 raise ValueError('Invalid binary operation or stack underflow')
+            depth -= 1
+        elif op == 'DEFINE':
+            if not isinstance(arg, (list, tuple)) or len(arg) != 3:
+                raise ValueError('Invalid function definition')
+            name, params, address = arg
+            if not isinstance(name, str) or not isinstance(params, (list, tuple)) or not all(isinstance(p, str) for p in params) or len(set(params)) != len(params) or type(address) is not int or not 0 <= address <= len(module.code):
+                raise ValueError('Invalid function metadata')
+        elif op == 'CALL':
+            if not isinstance(arg, (list, tuple)) or len(arg) != 2:
+                raise ValueError('Invalid call')
+            name, argc = arg
+            if not isinstance(name, str) or type(argc) is not int or argc < 0 or depth < argc:
+                raise ValueError('Invalid call arguments')
+            depth = depth - argc + 1
+        elif op == 'RETURN':
+            if arg is not None or depth < 1:
+                raise ValueError('Invalid return')
             depth -= 1
         elif op == 'BUILD_LIST':
             if type(arg) is not int or arg < 0 or depth < arg:
@@ -114,6 +131,10 @@ def compile_source(source):
             code.append(('PUSH', node.value))
         elif isinstance(node, Name):
             code.append(('LOAD', node.value))
+        elif isinstance(node, Call):
+            for item in node.arguments:
+                emit_expr(item)
+            code.append(('CALL', (node.name, len(node.arguments))))
         elif isinstance(node, ListLiteral):
             for item in node.elements:
                 emit_expr(item)
@@ -145,6 +166,18 @@ def compile_source(source):
         elif isinstance(stmt, Print):
             emit_expr(stmt.value)
             code.append(('PRINT', None))
+        elif isinstance(stmt, Function):
+            skip = len(code)
+            code.append(('JUMP', -1))
+            start = len(code)
+            emit_block(stmt.body)
+            code.append(('PUSH', 0))
+            code.append(('RETURN', None))
+            code[skip] = ('JUMP', len(code))
+            code.append(('DEFINE', (stmt.name, stmt.parameters, start)))
+        elif isinstance(stmt, Return):
+            emit_expr(stmt.value)
+            code.append(('RETURN', None))
         elif isinstance(stmt, If):
             exits = []
             for condition, body in stmt.branches:
@@ -207,6 +240,10 @@ def execute(module, *, max_steps=100000):
     if type(max_steps) is not int or max_steps < 1:
         raise ValueError('max_steps must be positive')
     stack, variables, output = [], {}, []
+    functions = {}
+    frames = [variables]
+    calls = []
+    max_call_depth = 100
     pc = 0
     steps = 0
     while pc < len(module.code):
@@ -218,11 +255,40 @@ def execute(module, *, max_steps=100000):
         if op == 'PUSH':
             stack.append(arg)
         elif op == 'LOAD':
-            if arg not in variables:
+            if arg in frames[-1]:
+                stack.append(frames[-1][arg])
+            elif arg in variables:
+                stack.append(variables[arg])
+            else:
                 raise RuntimeErrorNext(f'Undefined variable: {arg}')
-            stack.append(variables[arg])
         elif op == 'STORE':
-            variables[arg] = stack.pop()
+            frames[-1][arg] = stack.pop()
+        elif op == 'DEFINE':
+            name, params, address = arg
+            functions[name] = (params, address)
+        elif op == 'CALL':
+            name, argc = arg
+            if name not in functions:
+                raise RuntimeErrorNext(f'Undefined function: {name}')
+            params, address = functions[name]
+            if len(params) != argc:
+                raise RuntimeErrorNext(f'Incorrect argument count for {name}')
+            if len(frames) >= max_call_depth:
+                raise RuntimeErrorNext('Function call depth limit exceeded')
+            args = stack[-argc:] if argc else []
+            if argc:
+                del stack[-argc:]
+            calls.append((pc, len(stack)))
+            frames.append(dict(zip(params, args)))
+            pc = address
+        elif op == 'RETURN':
+            if not calls:
+                raise RuntimeErrorNext('Return outside function')
+            result = stack.pop()
+            pc, base = calls.pop()
+            del stack[base:]
+            frames.pop()
+            stack.append(result)
         elif op == 'BUILD_LIST':
             items = stack[-arg:] if arg else []
             if arg:
@@ -246,7 +312,7 @@ def execute(module, *, max_steps=100000):
         elif op == 'ITER_NEXT':
             name, end = arg
             try:
-                variables[name] = next(stack[-1])
+                frames[-1][name] = next(stack[-1])
             except StopIteration:
                 pc = end
         elif op == 'PRINT':
