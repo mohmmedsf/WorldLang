@@ -4,6 +4,7 @@ on:
     branches:
       - feature/hybrid-runtime-e2e
       - feature/next-functions-loops-lists
+      - feature/next-foreach-indexing
   pull_request:
     paths:
       - 'next_syntax/**'
