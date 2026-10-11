@@ -1,5 +1,6 @@
 """Command line entry point for the experimental WorldLang Next interpreter."""
 import argparse
+import json
 import sys
 from pathlib import Path
 from .lexer import lex, SyntaxErrorNext
@@ -8,16 +9,24 @@ from .analyzer import analyze
 from .diagnostics import syntax_diagnostic
 from .runtime import run, RuntimeErrorNext
 from .bytecode import Bytecode, compile_source, execute
+from .ast_json import dumps as ast_dumps
+from .editor import diagnostics
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='python -m next_syntax')
-    parser.add_argument('command', choices=('run', 'check', 'tokens', 'lint', 'compile', 'vm'))
+    parser.add_argument('command', choices=('run', 'check', 'tokens', 'lint', 'compile', 'vm', 'ast-json', 'diagnostics-json'))
     parser.add_argument('file', type=Path)
     parser.add_argument('--max-steps', type=int, default=100000)
     args = parser.parse_args(argv)
     try:
         source = args.file.read_text(encoding='utf-8-sig')
-        if args.command == 'compile':
+        if args.command == 'ast-json':
+            print(ast_dumps(parse(source)))
+        elif args.command == 'diagnostics-json':
+            issues = diagnostics(source)
+            print(json.dumps({'schema': 'worldlang.next.diagnostics', 'version': 1, 'diagnostics': issues}, ensure_ascii=False))
+            return 1 if issues else 0
+        elif args.command == 'compile':
             module = compile_source(source)
             target = args.file.with_suffix('.wbc.json')
             target.write_text(module.to_json(), encoding='utf-8')
