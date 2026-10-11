@@ -10,7 +10,7 @@ from .runtime import RuntimeErrorNext, OPERATORS
 
 VERSION = 1
 OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT', 'BUILD_LIST', 'INDEX', 'ITER_INIT', 'ITER_NEXT', 'DEFINE', 'CALL', 'RETURN'}
-BINARY = set(OPERATORS) | {'AND', 'OR'}
+BINARY = set(OPERATORS)
 
 @dataclass(frozen=True)
 class Bytecode:
@@ -28,6 +28,8 @@ class Bytecode:
             raise ValueError('Invalid bytecode document')
         if not isinstance(obj['code'], list):
             raise ValueError('Invalid code')
+        if not all(isinstance(i, list) and len(i) == 2 for i in obj['code']):
+            raise ValueError('Invalid instruction format')
         result = cls(obj['version'], tuple(tuple(i) for i in obj['code']))
         validate(result)
         return result
@@ -42,7 +44,7 @@ def validate(module):
         if not isinstance(instruction, tuple) or len(instruction) != 2:
             raise ValueError('Invalid instruction format')
         op, arg = instruction
-        if op not in OPS:
+        if not isinstance(op, str) or op not in OPS:
             raise ValueError('Invalid opcode')
         if op == 'PUSH':
             if type(arg) not in (int, float, str, bool):
@@ -53,7 +55,7 @@ def validate(module):
                 raise ValueError('Invalid name')
             depth += 1
         elif op == 'BINARY':
-            if arg not in BINARY or depth < 2:
+            if not isinstance(arg, str) or arg not in BINARY or depth < 2:
                 raise ValueError('Invalid binary operation or stack underflow')
             depth -= 1
         elif op == 'DEFINE':
