@@ -6,6 +6,7 @@ on:
       - feature/next-functions-loops-lists
       - feature/next-foreach-indexing
       - integration/next-toolchain-v1
+      - release/next-v1-hardening
       - feature/next-source-diagnostics
       - feature/next-static-analysis
   pull_request:
