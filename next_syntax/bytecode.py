@@ -122,7 +122,7 @@ def validate(module):
         else:
             successors = (pc + 1,)
         for target in successors:
-            pending.append((target, next_depth if op != 'ITER_NEXT' or target == pc + 1 else depth - 1))
+            pending.append((target, next_depth if op != 'ITER_NEXT' or target == pc + 1 else depth))
 
     return True
 
