@@ -49,7 +49,7 @@ class ExtendedRuntimeTests(unittest.TestCase):
 
     def test_duplicate_parameter(self):
         with self.assertRaisesRegex(SyntaxErrorNext, 'Duplicate'):
-            parse('دالة خطأ(س، س)\n    أرجع س')
+            parse('دالة فحص(س، س)\n    أرجع س')
 
 if __name__ == '__main__':
     unittest.main()
