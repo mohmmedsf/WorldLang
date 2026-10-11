@@ -29,7 +29,7 @@ def send(stream, payload):
     stream.flush()
 
 def diagnostic_items(source):
-    return [{'range': {'start': {'line': 0, 'character': 0}, 'end': {'line': 0, 'character': 1}},
+    return [{'range': {'start': {'line': max(d['line'] - 1, 0), 'character': max(d['column'] - 1, 0)}, 'end': {'line': max(d['line'] - 1, 0), 'character': max(d['column'], 1)}},
              'severity': 1, 'source': 'worldlang-next', 'code': d['code'], 'message': d['message']}
             for d in diagnostics(source)]
 
