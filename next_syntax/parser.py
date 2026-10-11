@@ -244,13 +244,15 @@ class Parser:
         else:
             raise SyntaxErrorNext(f'Line {token.line}, column {token.column}: expected expression, got {token.kind}')
 
-        while self.current.kind == 'LBRACKET':
-            self.expect('LBRACKET')
-            index = self.expression()
-            self.expect('RBRACKET')
-            left = Index(left, index)
-
-        while self.current.kind in PRECEDENCE and PRECEDENCE[self.current.kind] >= min_precedence:
+        while True:
+            if self.current.kind == 'LBRACKET':
+                self.expect('LBRACKET')
+                index = self.expression()
+                self.expect('RBRACKET')
+                left = Index(left, index)
+                continue
+            if self.current.kind not in PRECEDENCE or PRECEDENCE[self.current.kind] < min_precedence:
+                break
             operator = self.current.kind
             if operator in COMPARISONS and isinstance(left, Binary) and left.op in COMPARISONS:
                 raise SyntaxErrorNext(f'Line {self.current.line}: chained comparisons require explicit AND')
