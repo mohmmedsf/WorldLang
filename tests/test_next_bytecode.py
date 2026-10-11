@@ -28,9 +28,9 @@ class BytecodeTests(unittest.TestCase):
         module = compile_source('دالة فحص():\n    أرجع 1\nاطبع فحص()')
         self.assertEqual(execute(module)['output'], ['1'])
 
-    def test_reject_unsupported_boolean_short_circuit(self):
-        with self.assertRaises(ValueError):
-            compile_source('اطبع صحيح و خطأ')
+    def test_boolean_short_circuit_matches_interpreter(self):
+        source = 'اطبع صحيح و خطأ'
+        self.assertEqual(execute(compile_source(source))['output'], run(source).output)
 
     def test_step_limit(self):
         with self.assertRaises(RuntimeErrorNext):
