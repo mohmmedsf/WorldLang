@@ -7,16 +7,30 @@ from .parser import parse
 from .analyzer import analyze
 from .diagnostics import syntax_diagnostic
 from .runtime import run, RuntimeErrorNext
+from .bytecode import Bytecode, compile_source, execute
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='python -m next_syntax')
-    parser.add_argument('command', choices=('run', 'check', 'tokens', 'lint'))
+    parser.add_argument('command', choices=('run', 'check', 'tokens', 'lint', 'compile', 'vm'))
     parser.add_argument('file', type=Path)
     parser.add_argument('--max-steps', type=int, default=100000)
     args = parser.parse_args(argv)
     try:
         source = args.file.read_text(encoding='utf-8-sig')
-        if args.command in ('check', 'lint'):
+        if args.command == 'compile':
+            module = compile_source(source)
+            target = args.file.with_suffix('.wbc.json')
+            target.write_text(module.to_json(), encoding='utf-8')
+            print(target)
+        elif args.command == 'vm':
+            if args.file.name.endswith('.wbc.json'):
+                module = Bytecode.from_json(source)
+            else:
+                module = compile_source(source)
+            result = execute(module, max_steps=args.max_steps)
+            for line in result['output']:
+                print(line)
+        elif args.command in ('check', 'lint'):
             syntax_error = syntax_diagnostic(source)
             if syntax_error is not None:
                 print(syntax_error.render(), file=sys.stderr)
