@@ -9,7 +9,7 @@ from .parser import Assign, Binary, If, While, Repeat, Literal, Name, Print, Una
 from .runtime import RuntimeErrorNext, OPERATORS
 
 VERSION = 1
-OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP'}
+OPS = {'PUSH', 'LOAD', 'STORE', 'BINARY', 'NEG', 'PRINT', 'JUMP', 'JUMP_IF_FALSE', 'DUP', 'POP', 'CHECK_REPEAT'}
 BINARY = set(OPERATORS) | {'AND', 'OR'}
 
 @dataclass(frozen=True)
@@ -63,6 +63,9 @@ def validate(module):
                 if depth < 1:
                     raise ValueError('Stack underflow')
                 depth -= 1
+        elif op == 'CHECK_REPEAT':
+            if arg is not None or depth < 1:
+                raise ValueError('Invalid repeat count check')
         elif op == 'DUP':
             if arg is not None or depth < 1:
                 raise ValueError('Invalid DUP')
@@ -141,6 +144,7 @@ def compile_source(source):
             counter += 1
             name = f'\\x00repeat_{counter}'
             emit_expr(stmt.count)
+            code.append(('CHECK_REPEAT', None))
             code.append(('STORE', name))
             start = len(code)
             code.append(('LOAD', name))
@@ -190,6 +194,10 @@ def execute(module, *, max_steps=100000):
         elif op == 'JUMP_IF_FALSE':
             if not stack.pop():
                 pc = arg
+        elif op == 'CHECK_REPEAT':
+            count = stack[-1]
+            if type(count) is not int or count < 0:
+                raise RuntimeErrorNext('Repeat count must be a nonnegative integer')
         elif op == 'DUP':
             stack.append(stack[-1])
         elif op == 'POP':
