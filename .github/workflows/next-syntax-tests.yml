@@ -8,6 +8,7 @@ on:
       - integration/next-toolchain-v1
       - release/next-v1-hardening
       - feature/next-typed-ir
+      - feature/next-portable-ir-vm
       - feature/next-source-diagnostics
       - feature/next-static-analysis
   pull_request:
