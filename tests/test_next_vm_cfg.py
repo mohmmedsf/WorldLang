@@ -4,7 +4,7 @@ from next_syntax.bytecode import Bytecode, compile_source, execute, validate
 class CFGVerifierTests(unittest.TestCase):
     def test_reject_branch_join_stack_mismatch(self):
         code = (('PUSH', True), ('JUMP_IF_FALSE', 4), ('PUSH', 7), ('JUMP', 5), ('JUMP', 5), ('PRINT', None))
-        with self.assertRaisesRegex(ValueError, 'stack'):
+        with self.assertRaisesRegex(ValueError, '(?i)stack'):
             validate(Bytecode(1, code))
 
     def test_reject_back_edge_stack_growth(self):
