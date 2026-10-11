@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from next_syntax.__main__ import main
-from next_syntax.runtime import run
+from next_syntax.runtime import run, RuntimeErrorNext
 
 class IntegrationHardeningTests(unittest.TestCase):
     def cli(self, command, source):
@@ -17,7 +17,8 @@ class IntegrationHardeningTests(unittest.TestCase):
             return status, stdout.getvalue(), stderr.getvalue()
 
     def test_index_after_binary_expression(self):
-        self.assertEqual(run('اطبع [1، 2] + [3، 4][0]').output, ['[1, 2, 3]'])
+        with self.assertRaisesRegex(RuntimeErrorNext, 'Invalid operation'):
+            run('اطبع [1، 2] + [3، 4][0]')
 
     def test_index_after_parenthesized_binary(self):
         self.assertEqual(run('اطبع ([1، 2] + [3، 4])[2]').output, ['3'])
