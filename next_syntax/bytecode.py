@@ -39,7 +39,7 @@ def validate(module):
         raise ValueError('Unsupported bytecode version')
     if not isinstance(module.code, tuple):
         raise ValueError('Invalid bytecode instructions')
-    depth = 0
+    # Validate instruction shapes before control-flow analysis.
     for pc, instruction in enumerate(module.code):
         if not isinstance(instruction, tuple) or len(instruction) != 2:
             raise ValueError('Invalid instruction format')
@@ -49,81 +49,81 @@ def validate(module):
         if op == 'PUSH':
             if type(arg) not in (int, float, str, bool):
                 raise ValueError('Invalid constant')
-            depth += 1
-        elif op == 'LOAD':
+        elif op in ('LOAD', 'STORE'):
             if not isinstance(arg, str) or not arg:
-                raise ValueError('Invalid name')
-            depth += 1
+                raise ValueError('Invalid variable name')
         elif op == 'BINARY':
-            if not isinstance(arg, str) or arg not in BINARY or depth < 2:
-                raise ValueError('Invalid binary operation or stack underflow')
-            depth -= 1
+            if not isinstance(arg, str) or arg not in BINARY:
+                raise ValueError('Invalid binary operation')
+        elif op in ('JUMP', 'JUMP_IF_FALSE'):
+            if type(arg) is not int or not 0 <= arg <= len(module.code):
+                raise ValueError('Invalid jump target')
+        elif op == 'BUILD_LIST':
+            if type(arg) is not int or arg < 0:
+                raise ValueError('Invalid list size')
+        elif op == 'ITER_NEXT':
+            if not isinstance(arg, (list, tuple)) or len(arg) != 2 or not isinstance(arg[0], str) or not arg[0] or type(arg[1]) is not int or not 0 <= arg[1] <= len(module.code):
+                raise ValueError('Invalid iterator operands')
         elif op == 'DEFINE':
             if not isinstance(arg, (list, tuple)) or len(arg) != 3:
                 raise ValueError('Invalid function definition')
             name, params, address = arg
-            if not isinstance(name, str) or not isinstance(params, (list, tuple)) or not all(isinstance(p, str) for p in params) or len(set(params)) != len(params) or type(address) is not int or not 0 <= address <= len(module.code):
+            if not isinstance(name, str) or not name or not isinstance(params, (list, tuple)) or not all(isinstance(p, str) and p for p in params) or len(set(params)) != len(params) or type(address) is not int or not 0 <= address < len(module.code):
                 raise ValueError('Invalid function metadata')
         elif op == 'CALL':
-            if not isinstance(arg, (list, tuple)) or len(arg) != 2:
+            if not isinstance(arg, (list, tuple)) or len(arg) != 2 or not isinstance(arg[0], str) or not arg[0] or type(arg[1]) is not int or arg[1] < 0:
                 raise ValueError('Invalid call')
-            name, argc = arg
-            if not isinstance(name, str) or type(argc) is not int or argc < 0 or depth < argc:
-                raise ValueError('Invalid call arguments')
-            depth = depth - argc + 1
-        elif op == 'RETURN':
-            if arg is not None or depth < 1:
-                raise ValueError('Invalid return')
-            depth -= 1
-        elif op == 'BUILD_LIST':
-            if type(arg) is not int or arg < 0 or depth < arg:
-                raise ValueError('Invalid list construction')
-            depth = depth - arg + 1
-        elif op == 'INDEX':
-            if arg is not None or depth < 2:
-                raise ValueError('Invalid indexing')
-            depth -= 1
-        elif op == 'ITER_INIT':
-            if arg is not None or depth < 1:
-                raise ValueError('Invalid iterator initialization')
+        elif arg is not None:
+            raise ValueError('Unexpected instruction argument')
+
+    # Worklist dataflow: every reachable PC must have one consistent stack height.
+    # Function entry points start with empty stacks and RETURN terminates each path.
+    entries = {0}
+    entries.update(arg[2] for op, arg in module.code if op == 'DEFINE')
+    heights = {}
+    pending = [(pc, 0) for pc in entries]
+    n = len(module.code)
+    while pending:
+        pc, depth = pending.pop()
+        if pc in heights:
+            if heights[pc] != depth:
+                raise ValueError('Inconsistent stack height at control-flow join')
+            continue
+        heights[pc] = depth
+        if pc == n:
+            if depth != 0:
+                raise ValueError('Unbalanced stack at program exit')
+            continue
+        op, arg = module.code[pc]
+        pops, pushes = {
+            'PUSH': (0, 1), 'LOAD': (0, 1), 'STORE': (1, 0),
+            'BINARY': (2, 1), 'NEG': (1, 1), 'PRINT': (1, 0),
+            'JUMP': (0, 0), 'JUMP_IF_FALSE': (1, 0),
+            'DUP': (1, 2), 'POP': (1, 0), 'CHECK_REPEAT': (1, 1),
+            'BUILD_LIST': (arg if op == 'BUILD_LIST' else 0, 1),
+            'INDEX': (2, 1), 'ITER_INIT': (1, 1),
+            'ITER_NEXT': (1, 1), 'DEFINE': (0, 0),
+            'CALL': (arg[1] if op == 'CALL' else 0, 1),
+            'RETURN': (1, 0),
+        }[op]
+        if depth < pops:
+            raise ValueError('Stack underflow')
+        next_depth = depth - pops + pushes
+        if op == 'RETURN':
+            if next_depth != 0:
+                raise ValueError('Unbalanced function return stack')
+            continue
+        if op == 'JUMP':
+            successors = (arg,)
+        elif op == 'JUMP_IF_FALSE':
+            successors = (pc + 1, arg)
         elif op == 'ITER_NEXT':
-            if depth < 1:
-                raise ValueError('Iterator stack underflow')
-            if not isinstance(arg, list) and not isinstance(arg, tuple):
-                raise ValueError('Invalid iterator target')
-            if len(arg) != 2 or not isinstance(arg[0], str) or type(arg[1]) is not int or not 0 <= arg[1] <= len(module.code):
-                raise ValueError('Invalid iterator operands')
-        elif op in ('JUMP', 'JUMP_IF_FALSE'):
-            if type(arg) is not int or not 0 <= arg <= len(module.code):
-                raise ValueError('Invalid jump target')
-            if op == 'JUMP_IF_FALSE':
-                if depth < 1:
-                    raise ValueError('Stack underflow')
-                depth -= 1
-        elif op == 'CHECK_REPEAT':
-            if arg is not None or depth < 1:
-                raise ValueError('Invalid repeat count check')
-        elif op == 'DUP':
-            if arg is not None or depth < 1:
-                raise ValueError('Invalid DUP')
-            depth += 1
-        elif op == 'POP':
-            if arg is not None or depth < 1:
-                raise ValueError('Invalid POP')
-            depth -= 1
-        elif op == 'NEG':
-            if arg is not None or depth < 1:
-                raise ValueError('Invalid negation or stack underflow')
+            successors = (pc + 1, arg[1])
         else:
-            if op == 'STORE' and (not isinstance(arg, str) or not arg):
-                raise ValueError('Invalid store name')
-            if op == 'PRINT' and arg is not None:
-                raise ValueError('Invalid print argument')
-            if depth < 1:
-                raise ValueError('Stack underflow')
-            depth -= 1
-    if depth != 0:
-        raise ValueError('Unbalanced stack')
+            successors = (pc + 1,)
+        for target in successors:
+            pending.append((target, next_depth if op != 'ITER_NEXT' or target == pc + 1 else depth - 1))
+
     return True
 
 def compile_source(source):
