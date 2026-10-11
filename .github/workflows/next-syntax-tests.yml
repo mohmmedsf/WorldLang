@@ -1,0 +1,20 @@
+name: WorldLang Next Prototype Tests
+on:
+  push:
+    branches:
+      - feature/hybrid-runtime-e2e
+  pull_request:
+    paths:
+      - 'next_syntax/**'
+      - 'tests/test_next_*.py'
+      - '.github/workflows/next-syntax-tests.yml'
+jobs:
+  next-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run isolated Next tests
+        run: python -m unittest discover -s tests -p 'test_next_*.py' -v
